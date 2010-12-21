@@ -100,8 +100,9 @@ sub topic {
 
 # A useful help message
 sub help {
-	return "Schedule an event! Tell me 'Name of Event @ Place, Time/Date' " .
-		"or 'cancel Name of Event'. Date format: http://j.mp/e7V35j";
+	return "Schedule an event! Tell me 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date' " .
+		"or 'cancel Name of Event' or 'update Name: New Name @ New Place, Time/Date'. " .
+		"Date format: http://j.mp/e7V35j";
 }
 
 # Watch for when messages are said
@@ -135,15 +136,88 @@ sub said {
 
 					if ( my $err = $@ ) {
 						$self->log_error( $msg->{who}, "Problem finding associated calendar entry." );
+
+					} else {
+						# Remove the event
+						splice( @events, $i, 1 );
+
+						# Update the topic
+						$self->update_topic();
 					}
 
-					# Remove the event
-					splice( @events, $i, 1 );
-
-					# Update the topic
-					$self->update_topic();
-
 					# Only remove the first found event
+					last;
+				}
+			}
+
+		# Update an event with new details
+		} elsif ( $msg->{body} =~ /^update (.*?): ((.+) @ (?:(.+?), )?(.+))$/i ) {
+			my $name = $1;
+			my $desc = $2;
+			my $start;
+			my $all;
+			my $data = {
+				name => $3,
+				place => $5 ? $4 : "",
+
+				# This is where the date parsing is done
+				when => parsedate($5 || $4, ZONE => $TZZ, PREFER_FUTURE => 1)
+			};
+
+			# We need to build the dates for the calendar
+			eval {
+				$start = DateTime->from_epoch( epoch => $data->{when}, time_zone => $TZ );
+
+				# Crudely determine if this is an all-day event
+				# (Assume that midnight events are all day)
+				$all = $start->hour() == 0 && $start->minute() == 0;
+			};
+
+			if ( my $err = $@ ) {
+				$self->log_error( $msg->{who}, "Problem with date format. See: http://j.mp/e7V35j" );
+				return;
+			}
+
+			# Loop through all the events
+			for ( my $i = 0; $i <= $#events; $i++ ) {
+				my $event = $events[$i];
+
+				# And look for one whose name matches
+				if ( $event->{name} =~ /$name/i ) {
+					print STDERR "Updating $event->{name}\n";
+
+					# Be sure to update the associated Google Calendar event
+					eval {
+						foreach my $item ( $cal->get_events() ) {
+							if ( $item->id() eq $event->{id} ) {
+								# Update fields in calendar
+								$item->title( $data->{name} );
+								$item->content( $desc );
+								$item->location( $data->{place} );
+
+								# All events are two hours long by default
+								$item->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
+
+								# Update the entry on the server
+								$cal->update_entry( $item );
+							}
+						}
+					};
+
+					if ( my $err = $@ ) {
+						$self->log_error( $msg->{who}, "Problem finding associated calendar entry." );
+
+					} else {
+						# Update the details of the event
+						$event->{name} = $data->{name};
+						$event->{place} = $data->{place};
+						$event->{when} = $data->{when};
+	
+						# Update the topic
+						$self->update_topic();
+					}
+
+					# Only update the first found event
 					last;
 				}
 			}
@@ -201,7 +275,6 @@ sub said {
 			};
 
 			if ( my $err = $@ ) {
-				print STDERR "$err\n";
 				$self->log_error( $msg->{who}, "Problem saving calendar entry, please try again later." );
 
 			} else {

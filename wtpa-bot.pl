@@ -149,17 +149,17 @@ sub said {
 			}
 
 		# Otherwise check to see if we're adding an event
-		} elsif ( $msg->{body} =~ /^(.+) @ (.+?), (.+)$/ ) {
+		} elsif ( $msg->{body} =~ /^(.+) @ (?:(.+?), )?(.+)$/ ) {
 			print STDERR "Adding new entry.\n";
 
 			my $start;
 			my $all;
 			my $data = {
 				name => $1,
-				place => $2,
+				place => $3 ? $2 : "",
 
 				# This is where the date parsing is done
-				when => parsedate($3, ZONE => $TZZ, PREFER_FUTURE => 1)
+				when => parsedate($3 || $2, ZONE => $TZZ, PREFER_FUTURE => 1)
 			};
 
 			# We need to build the dates for the calendar
@@ -312,10 +312,14 @@ sub update_topic {
 			}
 
 			# Display the name and location of the event
-			# Don't display a time when it's at midnight (assume a full-day event)
-			$topic .= "$event->{name} @ $event->{place}" . ($when->hour > 0 ? " " . $when->strftime(
-				# Don't display the minutes when they're :00
-				$when->minute > 0 ? "%l:%M%P" : "%l%P" ) : "");
+			$topic .= "$event->{name} @" .
+				# Don't display the place if one wasn't specified
+				($event->{place} ? " $event->{place}" : "") .
+
+				# Don't display a time when it's at midnight (assume a full-day event)
+				($when->hour > 0 ? " " . $when->strftime(
+					# Don't display the minutes when they're :00
+					$when->minute > 0 ? "%l:%M%P" : "%l%P" ) : "");
 
 		# Items further in the future are clumped together
 		} else {

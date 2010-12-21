@@ -83,12 +83,12 @@ sub topic {
 	# If no user was specified (e.g. it was done before we entered the channel)
 	if ( $msg->{who} eq "" ) {
 		# Override the topic with ours
-		$self->update_topic();
+		$self->update_topic( $msg->{topic} );
 
 	# If we didn't change the topic
 	} elsif ( $msg->{who} ne $self->nick() ) {
 		# Override the topic with ours
-		$self->update_topic();
+		$self->update_topic( $msg->{topic} );
 
 		# And chastise the user who changed it
 		$self->say(
@@ -101,8 +101,8 @@ sub topic {
 # A useful help message
 sub help {
 	return "Schedule an event! Tell me 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date' " .
-		"or 'cancel Name of Event' or 'update Name: New Name @ New Place, Time/Date'. " .
-		"Date format: http://j.mp/e7V35j";
+		"or 'cancel Name of Event' or 'update Name: New Name @ New Place, Time/Date' " .
+		"or 'topic' to see the topic. Date format: http://j.mp/e7V35j";
 }
 
 # Watch for when messages are said
@@ -113,10 +113,14 @@ sub said {
 	$msg->{address} =~ s/[^\w]//g;
 
 	# Check to see if the message was addressed to us
-	if ( $msg->{address} eq $self->nick() ) {
+	if ( $msg->{address} eq $self->nick() || $msg->{address} eq "msg" ) {
+
+		# Get the current topic
+		if ( $msg->{body} eq "topic" ) {
+			return $self->update_topic( 1 );
 
 		# Is the user attempting to cancel an event
-		if ( $msg->{body} =~ /^cancel (.*)/i ) {
+		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
 			my $name = $1;
 
 			# Loop through all the events
@@ -352,6 +356,7 @@ sub tick {
 # Utility method for updating the topic
 sub update_topic {
 	my $self = shift;
+	my $cur_topic = shift;
 	my $topic = "";
 
 	# Get the current day of the year
@@ -410,6 +415,16 @@ sub update_topic {
 	# If no events, add a Richard-ism
 	if ( $topic eq "" ) {
 		$topic = "Embrace death.";
+	}
+
+	# A way to get at the current topic
+	if ( $cur_topic == 1 ) {
+		return $topic;
+	}
+
+	# The topic is identical to what's there, don't update
+	if ( $topic eq $cur_topic ) {
+		return;
 	}
 
 	print STDERR "Updating: $topic\n";

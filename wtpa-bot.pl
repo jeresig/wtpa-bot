@@ -363,6 +363,7 @@ sub update_topic {
 	my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
 	my $cur = $now->doy();
 	my $disp = "";
+	my $later = 0;
 
 	# Go through all the events
 	foreach my $event ( @events ) {
@@ -401,10 +402,12 @@ sub update_topic {
 
 		# Items further in the future are clumped together
 		} else {
-			$topic .= ($topic eq "" ? "" : $disp != $day ? " | Later: " : ", ");
+			$topic .= ($topic eq "" ? "" : !$later ? " | Later: " : ", ");
 
 			# Only display the name of the event and date (no location or time)
 			$topic .= "$event->{name} " . $when->strftime("%b %e");
+
+			$later = 1;
 		}
 
 		$disp = $day;

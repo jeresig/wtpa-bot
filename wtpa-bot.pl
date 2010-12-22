@@ -14,6 +14,7 @@ use Time::ParseDate;
 use DateTime;
 use Data::Dumper;
 use Net::Google::Calendar;
+use WWW::Shorten::Bitly;
 
 # Configuration
 
@@ -32,6 +33,7 @@ my $TZZ = 'EST';
 
 # The file that contains the places to load
 my $places_file = 'places.txt';
+my $places_url = 'http://ejohn.org/files/wtpa-places.txt';
 
 # The name of the Google Calendar to update
 my $cal_name = 'Where\'s the Party At?';
@@ -48,12 +50,15 @@ require $backup;
 #  $GOOGLE_PASS = '...'; # Google Password
 #  $PING_USER = '...'; # PingFM Username
 #  $PING_KEY = '...';  # PingFM Key
+#  $BITLY_USER = '...'; # Bitly Username
+#  $BITLY_KEY = '...'; # Bitly Key
 require 'auth.inc';
 
 # Main Code
 
 my %places = ();
 my @events = @{$VAR1};
+my $paste;
 my $cal;
 my $p;
 
@@ -70,6 +75,9 @@ sub init {
 		}
 	}
 	close( P );
+
+	# Paste service
+	$paste = WWW::Pastebin::Bot::Pastebot::Create->new;
 
 	# Connect to Google Calendar
 	$cal = Net::Google::Calendar->new;
@@ -113,9 +121,10 @@ sub topic {
 
 # A useful help message
 sub help {
-	return "Schedule an event! Tell me 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date' " .
-		"or 'cancel Name of Event' or 'update Name: New Name @ New Place, Time/Date' " .
-		"or 'topic' to see the topic or 'place add name address' or 'place update name: new name address'. " .
+	return "Message me to find the party. " . 
+		"Add event: 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date'. " .
+		"Other: 'cancel Name of Event', 'update Name: Name @ Time/Date', " .
+		"'topic', 'places', 'place add name address', 'place update name: new name address'. " .
 		"Date format: http://j.mp/e7V35j";
 }
 
@@ -126,9 +135,55 @@ sub said {
 
 	# Check to see if the message was addressed to us
 	if ( $msg->{address} eq $self->nick() || $msg->{address} eq "msg" ) {
+		my $re = "";
+
+		# Dump a status report for today
+		if ( $msg->{body} eq "" || $msg->{body} eq "wtpa" ) {
+			# Get the current day of the year
+			my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
+			my $cur = $now->doy();
+
+			# Go through all the events
+			foreach my $event ( @events ) {
+				# Get their day of the year
+				my $when = DateTime->from_epoch( epoch => $event->{when}, time_zone => $TZ );
+				my $day = $when->doy();
+
+				if ( $day == $cur ) {
+					my $place = $self->find_place( $event );
+					my $url = "";
+
+					if ( $place ne $event->{place} && $place ne $event->{name} ) {
+						$url = makeashorterlink( "http://maps.google.com/maps?q=$place",
+							$BITLY_USER, $BITLY_KEY );
+					}
+
+					if ( $re ) {
+						$re .= ", ";
+					}
+
+					# Display the name and location of the event
+					$re .= "$event->{name} " .
+
+						# Don't display a time when it's at midnight (assume a full-day event)
+						($when->hour > 0 ? $when->strftime(
+							# Don't display the minutes when they're :00
+							$when->minute > 0 ? "%l:%M%P" : "%l%P" ) : "") .
+
+						($event->{place} || $url ? " @ " : "") .
+
+						# Don't display the place if one wasn't specified
+						($event->{place} ? " $event->{place}" : "") .
+						($url ? " ($place $url)" : "");
+				}
+			}
+
+			$re =~ s/ +/ /g;
+
+			$self->re( 0, $msg, $re || "No party today!" );
 
 		# Get the current topic
-		if ( $msg->{body} eq "topic" ) {
+		} elsif ( $msg->{body} eq "topic" ) {
 			return $self->update_topic( 1 );
 
 		# Is the user attempting to do add a place
@@ -158,6 +213,10 @@ sub said {
 			}
 
 			$self->save_places( $msg );
+
+		# Dump a list of places
+		} elsif ( $msg->{body} eq "places" ) {
+			$self->re( 0, $msg, $places_url );
 
 		# Is the user attempting to cancel an event
 		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
@@ -225,8 +284,6 @@ sub said {
 			# Loop through all the events
 			for ( my $i = 0; $i <= $#events; $i++ ) {
 				my $event = $events[$i];
-
-				print STDERR "Compare $event->{name} with $name\n";
 
 				# And look for one whose name matches
 				if ( $event->{name} =~ /$name/i ) {
@@ -350,12 +407,9 @@ sub find_place {
 	my $event = shift;
 	my $cur = $event->{place} || $event->{name};
 
-	print STDERR "Finding place in DB...\n";
-
 	foreach my $place ( sort keys %places ) {
 		# See if the place matches the key
 		if ( $cur =~ /$place/i ) {
-			print STDERR "Place found! Matched: $place, $places{$place}\n";
 			return $places{ $place };
 		}
 	}

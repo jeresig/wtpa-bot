@@ -30,6 +30,9 @@ my $email = 'wheres-the-party-at@googlegroups.com';
 my $TZ = 'America/New_York';
 my $TZZ = 'EST';
 
+# The file that contains the places to load
+my $places_file = 'places.txt';
+
 # The name of the Google Calendar to update
 my $cal_name = 'Where\'s the Party At?';
 
@@ -49,12 +52,25 @@ require 'auth.inc';
 
 # Main Code
 
+my %places = ();
 my @events = @{$VAR1};
 my $cal;
 my $p;
 
-# Connect to Google Calendar and PingFM
+# Load places, connect to Google Calendar and PingFM
 sub init {
+	# Load in all the addresses being used
+	open( P, $places_file );
+	while ( <P> ) {
+		chomp;
+		my ( $name, $address ) = split(/\t/);
+
+		if ( $name ) {
+			$places{ $name } = $address;
+		}
+	}
+	close( P );
+
 	# Connect to Google Calendar
 	$cal = Net::Google::Calendar->new;
 	$cal->login( $GOOGLE_USER, $GOOGLE_PASS );
@@ -91,10 +107,7 @@ sub topic {
 		$self->update_topic( $msg->{topic} );
 
 		# And chastise the user who changed it
-		$self->say(
-			channel => $chan,
-			body => "$msg->{who}: Please use me to update the topic!"
-		);
+		$self->re( 1, $msg, "Please use me to update the topic!" );
 	}
 }
 
@@ -102,7 +115,8 @@ sub topic {
 sub help {
 	return "Schedule an event! Tell me 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date' " .
 		"or 'cancel Name of Event' or 'update Name: New Name @ New Place, Time/Date' " .
-		"or 'topic' to see the topic. Date format: http://j.mp/e7V35j";
+		"or 'topic' to see the topic or 'place add name address' or 'place update name: new name address'. " .
+		"Date format: http://j.mp/e7V35j";
 }
 
 # Watch for when messages are said
@@ -110,14 +124,40 @@ sub said {
 	my $self = shift;
 	my $msg = shift;
 
-	$msg->{address} =~ s/\s*//g;
-
 	# Check to see if the message was addressed to us
-	if ( $msg->{address} eq $self->nick() . ":" || $msg->{address} eq "msg" ) {
+	if ( $msg->{address} eq $self->nick() || $msg->{address} eq "msg" ) {
 
 		# Get the current topic
 		if ( $msg->{body} eq "topic" ) {
 			return $self->update_topic( 1 );
+
+		# Is the user attempting to do add a place
+		} elsif ( $msg->{body} =~ /^place add ([^ ]+) (.+)/i ) {
+			my $new_place = $1;
+			my $new_address = $2;
+
+			$places{ $new_place } = $new_address;
+
+			$self->save_places( $msg );
+
+		# Is the user attempting to update a place
+		} elsif ( $msg->{body} =~ /^place update (.*?): ([^ ]+) (.+)/i ) {
+			my $match = $1;
+			my $new_place = $2;
+			my $new_address = $3;
+
+			# Look through places, finding the first one to replace
+			foreach my $place ( sort keys %places ) {
+				if ( $place =~ /$match/i ) {
+					delete $places{ $place };
+
+					$places{ $new_place } = $new_address;
+				}
+
+				last;
+			}
+
+			$self->save_places( $msg );
 
 		# Is the user attempting to cancel an event
 		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
@@ -139,7 +179,7 @@ sub said {
 					};
 
 					if ( my $err = $@ ) {
-						$self->log_error( $msg->{who}, "Problem finding associated calendar entry." );
+						$self->re( 1, $msg, "Problem finding associated calendar entry." );
 
 					} else {
 						# Remove the event
@@ -178,13 +218,15 @@ sub said {
 			};
 
 			if ( my $err = $@ ) {
-				$self->log_error( $msg->{who}, "Problem with date format. See: http://j.mp/e7V35j" );
+				$self->re( 1, $msg, "Problem with date format. See: http://j.mp/e7V35j" );
 				return;
 			}
 
 			# Loop through all the events
 			for ( my $i = 0; $i <= $#events; $i++ ) {
 				my $event = $events[$i];
+
+				print STDERR "Compare $event->{name} with $name\n";
 
 				# And look for one whose name matches
 				if ( $event->{name} =~ /$name/i ) {
@@ -197,7 +239,7 @@ sub said {
 								# Update fields in calendar
 								$item->title( $data->{name} );
 								$item->content( $desc );
-								$item->location( $data->{place} );
+								$item->location( $self->find_place( $data ) );
 
 								# All events are two hours long by default
 								$item->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
@@ -209,7 +251,7 @@ sub said {
 					};
 
 					if ( my $err = $@ ) {
-						$self->log_error( $msg->{who}, "Problem finding associated calendar entry." );
+						$self->re( 1, $msg, "Problem finding associated calendar entry." );
 
 					} else {
 						# Update the details of the event
@@ -250,7 +292,7 @@ sub said {
 			};
 
 			if ( my $err = $@ ) {
-				$self->log_error( $msg->{who}, "Problem with date format. See: http://j.mp/e7V35j" );
+				$self->re( 1, $msg, "Problem with date format. See: http://j.mp/e7V35j" );
 				return;
 			}
 
@@ -259,7 +301,7 @@ sub said {
 				my $entry = Net::Google::Calendar::Entry->new();
 				$entry->title( $data->{name} );
 				$entry->content( $msg->{body} );
-				$entry->location( $data->{place} );
+				$entry->location( $self->find_place( $data ) );
 				$entry->transparency( "transparent" );
 				$entry->visibility( "public" );
 
@@ -279,7 +321,7 @@ sub said {
 			};
 
 			if ( my $err = $@ ) {
-				$self->log_error( $msg->{who}, "Problem saving calendar entry, please try again later." );
+				$self->re( 1, $msg, "Problem saving calendar entry, please try again later." );
 
 			} else {
 				# The calendar was saved so save the data as well
@@ -302,17 +344,57 @@ sub said {
 	return;
 }
 
-# Simple routine for displaying error messages
-sub log_error {
+# Find an associated place in the DB
+sub find_place {
 	my $self = shift;
-	my $who = shift;
+	my $event = shift;
+	my $cur = $event->{place} || $event->{name};
+
+	print STDERR "Finding place in DB...\n";
+
+	foreach my $place ( sort keys %places ) {
+		# See if the place matches the key
+		if ( $cur =~ /$place/i ) {
+			print STDERR "Place found! Matched: $place, $places{$place}\n";
+			return $places{ $place };
+		}
+	}
+
+	return $cur;
+}
+
+# Routine for saving the place list to a file
+sub save_places {
+	my $self = shift;
 	my $msg = shift;
 
-	print STDERR "ERROR: $msg\n";
+	print STDERR "Saving places...\n";
 
-	$self->say(
-		channel => $chan,
-		body => "$who: ERROR: $msg"
+	# Open the file and write out all the key/value pairs
+	open( P, ">$places_file" );
+	print P join( "\n", map { "$_\t$places{$_}" } sort keys %places );
+	close( P );
+
+	# Notify the user of the save
+	$self->re( 0, $msg, "Place list updated." );
+}
+
+# Simple routine for displaying error messages
+sub re {
+	my $self = shift;
+	my $error = shift;
+	my $orig = shift;
+	my $msg = shift;
+
+	if ( $error ) {
+		print STDERR "ERROR: $msg\n";
+		$msg = "ERROR: $msg";
+	}
+
+	$self->say( 
+		who => $orig->{who},
+		channel => $orig->{channel},
+		body => ($orig->{channel} eq "msg" ? "" : "$orig->{who}: ") . $msg
 	);
 }
 

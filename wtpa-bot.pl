@@ -58,7 +58,6 @@ require 'auth.inc';
 
 my %places = ();
 my @events = @{$VAR1};
-my $paste;
 my $cal;
 my $p;
 
@@ -75,9 +74,6 @@ sub init {
 		}
 	}
 	close( P );
-
-	# Paste service
-	$paste = WWW::Pastebin::Bot::Pastebot::Create->new;
 
 	# Connect to Google Calendar
 	$cal = Net::Google::Calendar->new;

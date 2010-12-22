@@ -19,7 +19,7 @@ use Net::Google::Calendar;
 
 # The IRC Server and Channel
 my $server = 'irc.easymac.org';
-my $chan = '#reallyreally';
+my $chan = '#really';
 
 # Details of the bot
 my $nick = 'wtpa';

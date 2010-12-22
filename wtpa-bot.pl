@@ -19,7 +19,7 @@ use Net::Google::Calendar;
 
 # The IRC Server and Channel
 my $server = 'irc.easymac.org';
-my $chan = '#really';
+my $chan = '#reallyreally';
 
 # Details of the bot
 my $nick = 'wtpa';
@@ -110,10 +110,10 @@ sub said {
 	my $self = shift;
 	my $msg = shift;
 
-	$msg->{address} =~ s/[^\w]//g;
+	$msg->{address} =~ s/\s*//g;
 
 	# Check to see if the message was addressed to us
-	if ( $msg->{address} eq $self->nick() || $msg->{address} eq "msg" ) {
+	if ( $msg->{address} eq $self->nick() . ":" || $msg->{address} eq "msg" ) {
 
 		# Get the current topic
 		if ( $msg->{body} eq "topic" ) {
@@ -362,6 +362,7 @@ sub update_topic {
 	# Get the current day of the year
 	my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
 	my $cur = $now->doy();
+	my $prev = $now;
 	my $disp = "";
 	my $later = 0;
 
@@ -402,15 +403,28 @@ sub update_topic {
 
 		# Items further in the future are clumped together
 		} else {
-			$topic .= ($topic eq "" ? "" : !$later ? " | Later: " : ", ");
+			# Display the month/day at the end of the list
+			if ( $later && $day != $disp ) {
+				$topic .= " " . $prev->strftime("%b %e");
+			}
+
+			# Handle the separation of items in the topic
+			$topic .= ($topic eq "" ? "" : !$later ? " | Later: " : 
+				$day != $disp ? ", " : " & ");
 
 			# Only display the name of the event and date (no location or time)
-			$topic .= "$event->{name} " . $when->strftime("%b %e");
+			$topic .= $event->{name};
 
 			$later = 1;
 		}
 
 		$disp = $day;
+		$prev = $when;
+	}
+
+	# Display the month/day at the end of the list
+	if ( $later ) {
+		$topic .= " " . $prev->strftime("%b %e");
 	}
 
 	$topic =~ s/ +/ /g;

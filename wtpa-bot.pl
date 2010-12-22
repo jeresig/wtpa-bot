@@ -323,7 +323,7 @@ sub tick {
 
 	# Get the current day of the year for comparison
 	my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
-	my $cur = $now->doy() || 367;
+	my $cur = $now->doy();
 	my $remove = 0;
 
 	# Go through all the events
@@ -333,7 +333,7 @@ sub tick {
 		my $day = $when->doy();
 
 		# If the event day is old we need to remove it
-		if ( $day < $cur ) {
+		if ( time() > $events[$i]->{when} && $day != $cur ) {
 			print STDERR "Cleaning up $events[$i]->{name}\n";
 
 			# Remove the event (but don't remove the calendar entry)

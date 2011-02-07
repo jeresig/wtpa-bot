@@ -384,7 +384,9 @@ sub said {
 			}
 
 		# No recognizable comand was found, display help
-		} else {
+		} elsif($msg->{who} eq 'mhoran') {
+      return "Bald.";
+    } else {
 			return $self->help();
 		}
 	}

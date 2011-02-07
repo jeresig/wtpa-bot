@@ -35,7 +35,7 @@ Makes an event tomorrow, location extracted from name:
 If you have an event far in the future you can specify the date using a normal date-like syntax:
 
     wtpa Tam Trivia @ March 2 8:30pm
-		wtpa Tam Trivia @ 3/2/11 8:30pm
+    wtpa Tam Trivia @ 3/2/11 8:30pm
 
 Make an event today, at 8pm, at a specific location (Note the use of a comma!):
 

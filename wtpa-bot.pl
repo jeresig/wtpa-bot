@@ -117,11 +117,7 @@ sub topic {
 
 # A useful help message
 sub help {
-	return "Message me to find the party. " . 
-		"Add event: 'Place @ Time/Date' or 'Name of Event @ Place, Time/Date'. " .
-		"Other: 'cancel Name of Event', 'update Name: Name @ Time/Date', " .
-		"'topic', 'places', 'place add name address', 'place update name: new name address'. " .
-		"Date format: http://j.mp/e7V35j";
+	return "How to use me: http://github.com/jeresig/wtpa-bot";
 }
 
 # Watch for when messages are said

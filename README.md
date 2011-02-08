@@ -79,7 +79,7 @@ You can add new locations to the list. The names of the locations are in the for
 
 Add a location for Bella Luna:
 
-    wtpa places add bella|luna 284 Amory St 02130
+    wtpa place add bella|luna 284 Amory St 02130
 
 (Note that the name of the place is split by a | (regex syntax), followed by a space, and then the full address.)
 
@@ -89,4 +89,4 @@ This update process works the same as updating an existing event.
 
 To update the Bella Luna entry to include 'milky' (for Milky Way) you could do:
 
-    wtpa places update luna: bella|luna|milky 284 Amory St 02130
+    wtpa place update luna: bella|luna|milky 284 Amory St 02130

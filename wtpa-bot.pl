@@ -3,96 +3,86 @@
 # Written by John Resig
 #   http://ejohn.org/
 
+use 5.010;
+use strict;
+use warnings;
+
+package main;
+
+our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
+
+my $bot = WTPABot->new(
+	server => $ini->{irc}{server},
+	channels => [ '#' . $ini->{irc}{channel} ],
+	nick => $ini->{irc}{nick},
+	username => $ini->{irc}{nick},
+	name => $ini->{irc}{name},
+	port => $ini->{irc}{port},
+	ssl => $ini->{irc}{ssl}
+);
+
+$bot->run();
+
 package WTPABot;
 use base 'Bot::BasicBot';
 
 # Includes, please install all ahead of time
 # All can be found on CPAN
 
+use JSON;
+use DateTime;
 use Net::PingFM;
 use Time::ParseDate;
-use DateTime;
-use Data::Dumper;
-use Net::Google::Calendar;
 use WWW::Shorten::Bitly;
-
-# Configuration
-
-# The IRC Server and Channel
-my $server = 'irc.easymac.org';
-my $chan = '#really';
-
-# Details of the bot
-my $nick = 'wtpa';
-my $name = 'Party Time';
-my $email = 'wheres-the-party-at@googlegroups.com';
-
-# The time zones of all the events
-my $TZ = 'America/New_York';
-my $TZZ = 'EST';
-
-# The file that contains the places to load
-my $places_file = 'places.txt';
-my $places_url = 'http://ejohn.org/files/wtpa-places.txt';
-
-# The name of the Google Calendar to update
-my $cal_name = 'Where\'s the Party At?';
-
-# The file where backups will be made
-# If starting for the first time make a file that contains:
-#  $VAR1 = [];
-my $backup = 'backup.inc';
-require $backup;
-
-# Load in the authentication details
-# The auth file should have 4 variables in it:
-#  $GOOGLE_USER = '...'; # Google Username
-#  $GOOGLE_PASS = '...'; # Google Password
-#  $PING_USER = '...'; # PingFM Username
-#  $PING_KEY = '...';  # PingFM Key
-#  $BITLY_USER = '...'; # Bitly Username
-#  $BITLY_KEY = '...'; # Bitly Key
-require 'auth.inc';
+use Net::Google::Calendar;
+use Config::Abstract::Ini;
 
 # Main Code
 
+my @events = ();
 my %places = ();
-my @events = @{$VAR1};
 my $cal;
-my $p;
+my $ping;
 
 # Load places, connect to Google Calendar and PingFM
 sub init {
-	# Load in all the addresses being used
-	open( P, $places_file );
-	while ( <P> ) {
-		chomp;
-		my ( $name, $address ) = split(/\t/);
+	# Load the old data from the backup file
+	open( JSON, $ini->{config}{backup} );
+	my $json = <JSON>;
+	@events = @{$json ne "" ? decode_json( $json ) : []};
+	close( JSON );
 
-		if ( $name ) {
-			$places{ $name } = $address;
-		}
-	}
-	close( P );
+	# Load in all the addresses being used
+	open( JSON, $ini->{places}{backup} );
+	$json = <JSON>;
+	%places = %{$json ne "" ? decode_json( $json ) : {}};
+	close( JSON );
 
 	# Connect to Google Calendar
-	$cal = Net::Google::Calendar->new;
-	$cal->login( $GOOGLE_USER, $GOOGLE_PASS );
+	if ( defined $ini->{google}{user} ) {
+		$cal = Net::Google::Calendar->new;
+		$cal->login(
+			$ini->{google}{user},
+			$ini->{google}{pass}
+		);
 
-	# We need to find the right calendar to use
-	foreach ( $cal->get_calendars ) {
-		if ( $_->title eq $cal_name ) {
-			$cal->set_calendar( $_ );
+		# We need to find the right calendar to use
+		foreach ( $cal->get_calendars ) {
+			if ( $_->title eq $ini->{google}{calendar_name} ) {
+				$cal->set_calendar( $_ );
+			}
 		}
 	}
 
 	# Connect to PingFM
-	$p = Net::PingFM->new(
-		user_key => $PING_USER,
-		api_key => $PING_KEY
-	);
+	if ( defined $ini->{ping}{user} ) {
+		$ping = Net::PingFM->new(
+			user_key => $ini->{ping}{user},
+			api_key => $ini->{ping}{key}
+		);
 
-	$p->user_validate or die "Login failed.";
+		$ping->user_validate or die "Login failed.";
+	}
 }
 
 # Watch for changes to the topic
@@ -101,7 +91,7 @@ sub topic {
 	my $msg = shift;
 
 	# If no user was specified (e.g. it was done before we entered the channel)
-	if ( $msg->{who} eq "" ) {
+	if ( !(defined $msg->{who}) || $msg->{who} eq "" ) {
 		# Override the topic with ours
 		$self->update_topic( $msg->{topic} );
 
@@ -126,28 +116,33 @@ sub said {
 	my $msg = shift;
 
 	# Check to see if the message was addressed to us
-	if ( $msg->{address} eq $self->nick() || $msg->{address} eq "msg" ) {
+	if ( defined $msg->{address} && ($msg->{address} eq $self->nick() || $msg->{address} eq "msg") ) {
 		my $re = "";
+
+		print STDERR "WHO: $msg->{who} MSG: $msg->{body}\n";
 
 		# Dump a status report for today
 		if ( $msg->{body} eq "" || $msg->{body} eq "wtpa" ) {
 			# Get the current day of the year
-			my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
+			my $now = $self->get_time( time() );
 			my $cur = $now->doy();
 
 			# Go through all the events
 			foreach my $event ( @events ) {
 				# Get their day of the year
-				my $when = DateTime->from_epoch( epoch => $event->{when}, time_zone => $TZ );
+				my $when = $self->get_time( $event->{when} );
 				my $day = $when->doy();
 
 				if ( $day == $cur ) {
 					my $place = $self->find_place( $event );
 					my $url = "";
 
-					if ( $place ne $event->{place} && $place ne $event->{name} ) {
+					if ( defined $ini->{bitly}{user} && $place ne $event->{name} &&
+							(!(defined $event->{place}) || $place ne $event->{place}) ) {
 						$url = makeashorterlink( "http://maps.google.com/maps?q=$place",
-							$BITLY_USER, $BITLY_KEY );
+							$ini->{bitly}{user},
+							$ini->{bitly}{key}
+						);
 					}
 
 					if ( $re ) {
@@ -176,7 +171,7 @@ sub said {
 
 		# Get the current topic
 		} elsif ( $msg->{body} eq "topic" ) {
-			return $self->update_topic( 1 );
+			return $self->update_topic( "1" );
 
 		# Is the user attempting to do add a place
 		} elsif ( $msg->{body} =~ /^place add ([^ ]+) (.+)/i ) {
@@ -207,8 +202,8 @@ sub said {
 			$self->save_places( $msg );
 
 		# Dump a list of places
-		} elsif ( $msg->{body} eq "places" ) {
-			$self->re( 0, $msg, $places_url );
+		} elsif ( $msg->{body} eq "places" && defined $ini->{places}{url} ) {
+			$self->re( 0, $msg, $ini->{places}{url} );
 
 		# Is the user attempting to cancel an event
 		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
@@ -221,24 +216,26 @@ sub said {
 					print STDERR "Cancelling $events[$i]->{name}\n";
 
 					# Be sure to remove the associated Google Calendar event
-					eval {
-						foreach my $item ( $cal->get_events() ) {
-							if ( $item->id() eq $events[$i]->{id} ) {
-								$cal->delete_entry( $item );
+					if ( defined $cal ) {
+						eval {
+							foreach my $item ( $cal->get_events() ) {
+								if ( $item->id() eq $events[$i]->{id} ) {
+									$cal->delete_entry( $item );
+								}
 							}
+						};
+
+						if ( my $err = $@ ) {
+							$self->re( 1, $msg, "Problem finding associated calendar entry." );
+							last;
 						}
-					};
-
-					if ( my $err = $@ ) {
-						$self->re( 1, $msg, "Problem finding associated calendar entry." );
-
-					} else {
-						# Remove the event
-						splice( @events, $i, 1 );
-
-						# Update the topic
-						$self->update_topic();
 					}
+
+					# Remove the event
+					splice( @events, $i, 1 );
+
+					# Update the topic
+					$self->update_topic();
 
 					# Only remove the first found event
 					last;
@@ -256,12 +253,12 @@ sub said {
 				place => $5 ? $4 : "",
 
 				# This is where the date parsing is done
-				when => parsedate($5 || $4, ZONE => $TZZ, PREFER_FUTURE => 1)
+				when => $self->parse_date( $5 || $4 )
 			};
 
 			# We need to build the dates for the calendar
 			eval {
-				$start = DateTime->from_epoch( epoch => $data->{when}, time_zone => $TZ );
+				$start = $self->get_time( $data->{when} );
 
 				# Crudely determine if this is an all-day event
 				# (Assume that midnight events are all day)
@@ -282,35 +279,37 @@ sub said {
 					print STDERR "Updating $event->{name}\n";
 
 					# Be sure to update the associated Google Calendar event
-					eval {
-						foreach my $item ( $cal->get_events() ) {
-							if ( $item->id() eq $event->{id} ) {
-								# Update fields in calendar
-								$item->title( $data->{name} );
-								$item->content( $desc );
-								$item->location( $self->find_place( $data ) );
+					if ( defined $cal ) {
+						eval {
+							foreach my $item ( $cal->get_events() ) {
+								if ( $item->id() eq $event->{id} ) {
+									# Update fields in calendar
+									$item->title( $data->{name} );
+									$item->content( $desc );
+									$item->location( $self->find_place( $data ) );
 
-								# All events are two hours long by default
-								$item->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
+									# All events are two hours long by default
+									$item->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
 
-								# Update the entry on the server
-								$cal->update_entry( $item );
+									# Update the entry on the server
+									$cal->update_entry( $item );
+								}
 							}
+						};
+
+						if ( my $err = $@ ) {
+							$self->re( 1, $msg, "Problem finding associated calendar entry." );
+							last;
 						}
-					};
-
-					if ( my $err = $@ ) {
-						$self->re( 1, $msg, "Problem finding associated calendar entry." );
-
-					} else {
-						# Update the details of the event
-						$event->{name} = $data->{name};
-						$event->{place} = $data->{place};
-						$event->{when} = $data->{when};
-	
-						# Update the topic
-						$self->update_topic();
 					}
+
+					# Update the details of the event
+					$event->{name} = $data->{name};
+					$event->{place} = $data->{place};
+					$event->{when} = $data->{when};
+	
+					# Update the topic
+					$self->update_topic();
 
 					# Only update the first found event
 					last;
@@ -328,12 +327,12 @@ sub said {
 				place => $3 ? $2 : "",
 
 				# This is where the date parsing is done
-				when => parsedate($3 || $2, ZONE => $TZZ, PREFER_FUTURE => 1)
+				when => $self->parse_date( $3 ? $3 : $2 )
 			};
 
 			# We need to build the dates for the calendar
 			eval {
-				$start = DateTime->from_epoch( epoch => $data->{when}, time_zone => $TZ );
+				$start = $self->get_time( $data->{when} );
 
 				# Crudely determine if this is an all-day event
 				# (Assume that midnight events are all day)
@@ -346,46 +345,45 @@ sub said {
 			}
 
 			# The date was built, now build the calendar entry
-			eval {
-				my $entry = Net::Google::Calendar::Entry->new();
-				$entry->title( $data->{name} );
-				$entry->content( $msg->{body} );
-				$entry->location( $self->find_place( $data ) );
-				$entry->transparency( "transparent" );
-				$entry->visibility( "public" );
+			if ( defined $cal ) {
+				eval {
+					my $entry = Net::Google::Calendar::Entry->new();
+					$entry->title( $data->{name} );
+					$entry->content( $msg->{body} );
+					$entry->location( $self->find_place( $data ) );
+					$entry->transparency( "transparent" );
+					$entry->visibility( "public" );
 
-				# All events are two hours long by default
-				$entry->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
+					# All events are two hours long by default
+					$entry->when( $start, $start + DateTime::Duration->new( hours => 2 ), $all );
 
-				# The author is just a fake person
-				my $author = Net::Google::Calendar::Person->new();
-				$author->name( $name );
-				$author->email( $email );
-				$entry->author( $author );
+					# The author is just a fake person
+					my $author = Net::Google::Calendar::Person->new();
+					$author->name( $ini->{irc}{name} );
+					$author->email( $ini->{google}{email} );
+					$entry->author( $author );
 
-				$entry = $cal->add_entry( $entry );
+					$entry = $cal->add_entry( $entry );
 
-				# Save the ID generated by Google Calendar so we can remove it later
-				$data->{id} = $entry->id();
-			};
+					# Save the ID generated by Google Calendar so we can remove it later
+					$data->{id} = $entry->id();
+				};
 
-			if ( my $err = $@ ) {
-				$self->re( 1, $msg, "Problem saving calendar entry, please try again later." );
-
-			} else {
-				# The calendar was saved so save the data as well
-				push( @events, $data );
-
-				# Make sure all the events are saved in order
-				@events = sort { $a->{when} <=> $b->{when} } @events;
-
-				# Update the topic
-				$self->update_topic();
+				if ( my $err = $@ ) {
+					$self->re( 1, $msg, "Problem saving calendar entry, please try again later." );
+					return;
+				}
 			}
 
-		# No recognizable comand was found, display help
-		} elsif($msg->{who} eq 'mhoran') {
-      return "Bald.";
+			# The calendar was saved so save the data as well
+			push( @events, $data );
+
+			# Make sure all the events are saved in order
+			@events = sort { $a->{when} <=> $b->{when} } @events;
+
+			# Update the topic
+			$self->update_topic();
+
     } else {
 			return $self->help();
 		}
@@ -418,10 +416,19 @@ sub save_places {
 
 	print STDERR "Saving places...\n";
 
-	# Open the file and write out all the key/value pairs
-	open( P, ">$places_file" );
-	print P join( "\n", map { "$_\t$places{$_}" } sort keys %places );
-	close( P );
+	# Encode all the places data
+	my $json = encode_json( \%places );
+
+	open( JSON, '>' . $ini->{places}{backup} );
+	print JSON $json;
+	close( JSON );
+
+	# Provide an optional JSONP file
+	if ( defined $ini->{places}{backup_jsonp} ) {
+		open( JSON, '>' . $ini->{places}{backup_jsonp} );
+		print JSON "$ini->{config}{backup_jsonp_fn}($json);";
+		close( JSON );
+	}
 
 	# Notify the user of the save
 	$self->re( 0, $msg, "Place list updated." );
@@ -452,14 +459,14 @@ sub tick {
 	my $self = shift;
 
 	# Get the current day of the year for comparison
-	my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
+	my $now = $self->get_time( time() );
 	my $cur = $now->doy();
 	my $remove = 0;
 
 	# Go through all the events
 	for ( my $i = 0; $i <= $#events; $i++ ) {
 		# Get their day of the year
-		my $when = DateTime->from_epoch( epoch => $events[$i]->{when}, time_zone => $TZ );
+		my $when = $self->get_time( $events[$i]->{when} );
 		my $day = $when->doy();
 
 		# If the event day is old we need to remove it
@@ -490,7 +497,7 @@ sub update_topic {
 	my $topic = "";
 
 	# Get the current day of the year
-	my $now = DateTime->from_epoch( epoch => time(), time_zone => $TZ );
+	my $now = $self->get_time( time() );
 	my $cur = $now->doy();
 	my $prev = $now;
 	my $disp = "";
@@ -499,7 +506,7 @@ sub update_topic {
 	# Go through all the events
 	foreach my $event ( @events ) {
 		# Get their day of the year
-		my $when = DateTime->from_epoch( epoch => $event->{when}, time_zone => $TZ );
+		my $when = $self->get_time( $event->{when} );
 		my $day = $when->doy();
 
 		# Make sure the date offset is handled correctly
@@ -509,7 +516,7 @@ sub update_topic {
 
 		# Only care about days within the next week
 		if ( $day <= $cur + 7 ) {
-			if ( $day != $disp ) {
+			if ( $disp ne "$day" ) {
 				if ( $topic ne "" ) {
 					$topic .= " | ";
 				}
@@ -565,46 +572,64 @@ sub update_topic {
 	}
 
 	# A way to get at the current topic
-	if ( $cur_topic == 1 ) {
+	if ( defined $cur_topic && $cur_topic eq "1" ) {
 		return $topic;
 	}
 
 	# The topic is identical to what's there, don't update
-	if ( $topic eq $cur_topic ) {
+	if ( defined $cur_topic && $topic eq $cur_topic ) {
 		return;
 	}
 
 	print STDERR "Updating: $topic\n";
 
 	# Backup the topic data
-	open( F, ">$backup" );
-	print F Dumper( \@events );
-	close( F );
+	my $json = encode_json( \@events );
+
+	open( JSON, '>' . $ini->{config}{backup} );
+	print JSON $json;
+	close( JSON );
+
+	# Provide an optional JSONP file
+	if ( defined $ini->{config}{backup_jsonp} ) {
+		open( JSON, '>' . $ini->{config}{backup_jsonp} );
+		print JSON "$ini->{config}{backup_jsonp_fn}($json);";
+		close( JSON );
+	}
 
 	# Update the topic in the channel
-	$self->{IRCOBJ}->yield( sl_prioritized => PRI_NORMAL, "TOPIC $chan :$topic" );
+	$self->{IRCOBJ}->yield(
+		sl_prioritized => 30,
+		"TOPIC #" . $ini->{irc}{channel} . " :$topic" );
 
 	# Post the topic to PingFM
-	eval {  
-		$p->post( $topic );
-	};
+	if ( defined $ping ) {
+		eval {
+			$ping->post( $topic );
+		};
 
-	if ( my $err = $@ ) {
-		print STDERR "ERROR: $err\n";
+		if ( my $err = $@ ) {
+			print STDERR "ERROR: $err\n";
+		}
 	}
 }
 
-# Run the bot
-package main;
+sub parse_date {
+	my ( $self, $date ) = @_;
 
-my $bot = WTPABot->new(
-	server => $server,
-	channels => [ $chan ],
-	nick => $nick,
-	username => $nick,
-	name => $name,
-	port => 6697,
-	ssl => 1
-);
+	my $time = parsedate( $date,
+		ZONE => $ini->{config}{timezone_short},
+		PREFER_FUTURE => 1
+	);
 
-$bot->run();
+	return $time;
+}
+
+sub get_time {
+	my ( $self, $date ) = @_;
+
+	return DateTime->from_epoch(
+		epoch => $date,
+		time_zone => $ini->{config}{timezone}
+	);
+}

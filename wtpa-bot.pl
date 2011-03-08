@@ -37,6 +37,7 @@ use WTPA;
 sub init {
 	calConnect();
 	pingConnect();
+	1;
 }
 
 # Watch for changes to the topic

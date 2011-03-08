@@ -113,7 +113,7 @@ $index =~ s/UPCOMING/$toUpdate/g;
 $index =~ s/PLACES/$placeList/g;
 $index =~ s/MSG//g;
 
-#print "Content-type: text/html\n\n";
+print "Content-type: text/html\n\n";
 print $index;
 
 __DATA__

@@ -5,19 +5,16 @@ use strict;
 use warnings;
 
 use CGI;
-
-our @events;
-our %places;
+use WTPA;
+use Config::Abstract::Ini;
 
 my $cgi = new CGI();
 my $action = $cgi->param('action') || "";
 my $index = join( "", <DATA> );
 
-require "utils.pl";
-
 our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
 
-utilInit();
+utilInit( $ini );
 
 if ( $action eq 'add' ) {
 	my $err = addEvent({
@@ -52,7 +49,7 @@ if ( $action eq 'add' ) {
 
 my $toUpdate = "";
 
-foreach my $event ( @events ) {
+foreach my $event ( @WTPA::events ) {
 	my $when = getTime( $event->{when} );
 	my $name = $event->{name};
 	my $place = $event->{place} || "";
@@ -99,12 +96,12 @@ foreach my $event ( @events ) {
 
 my $placeList = "";
 
-foreach my $place ( sort { lc($a) cmp lc($b) } keys %places ) {
+foreach my $place ( sort { lc($a) cmp lc($b) } keys %WTPA::places ) {
 	$placeList .= qq~<li><form action="" method="POST">
 		<input type="hidden" name="action" value="updateplace"/>
 		<input type="hidden" name="old" value="$place"/>
 		<label for="name">Name:</label><input type="text" name="name" value="$place"/>
-		<label for="address">Address:</label><input type="text" name="address" value="$places{$place}"/>
+		<label for="address">Address:</label><input type="text" name="address" value="$WTPA::places{$place}"/>
 		<input type="submit" value="Update"/>
 	</form></li>~;
 }

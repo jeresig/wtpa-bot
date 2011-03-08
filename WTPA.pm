@@ -1,3 +1,9 @@
+package WTPA;
+
+use 5.010;
+use strict;
+use warnings;
+
 # Includes, please install all ahead of time
 # All can be found on CPAN
 use JSON;
@@ -7,11 +13,29 @@ use Time::ParseDate;
 use WWW::Shorten::Bitly;
 use Net::Google::Calendar;
 use Config::Abstract::Ini;
+use base 'Exporter';
 
-my $cal;
-my $ping;
+our @EXPORT = qw( utilInit calConnect pingConnect events places
+	loadBackup saveBackup loadPlaces savePlaces
+	addEvent updateEvent cancelEvent trimEvent
+	addPlace updatePlace findPlace placeURL
+	getTopic getToday
+	getTime parseDate );
+
+our $VERSION = '0.1';
+
+our $cal;
+our $ping;
+our $ini;
+our $lastPull;
+
+our @events;
+our %places;
 
 sub utilInit {
+	$lastPull = time();
+	$ini = shift;
+	
 	loadBackup();
 	loadPlaces();
 }
@@ -74,7 +98,7 @@ sub saveBackup {
 	# Post the topic to PingFM
 	if ( defined $ping ) {
 		eval {
-			$ping->post( $topic );
+			$ping->post( getTopic() );
 		};
 
 		if ( my $err = $@ ) {
@@ -134,7 +158,7 @@ sub addEvent {
 		eval {
 			my $entry = Net::Google::Calendar::Entry->new();
 			$entry->title( $data->{name} );
-			$entry->content( $msg->{body} );
+			$entry->content( "" );
 			$entry->location( findPlace( $data ) );
 			$entry->transparency( "transparent" );
 			$entry->visibility( "public" );
@@ -267,6 +291,43 @@ sub cancelEvent {
 			return saveBackup();
 		}
 	}
+}
+
+sub trimEvent {
+	my $remove = 0;
+	my $mtime = (stat( $ini->{config}{backup} ))[9];
+
+	# Check to see if the data was updated via the web interface
+	if ( $lastPull && $mtime > $lastPull ) {
+		loadBackup();
+		$remove = 1;
+	}
+
+	$lastPull = $mtime;
+
+	# Get the current day of the year for comparison
+	my $now = getTime( time() );
+	my $cur = $now->doy();
+
+	# Go through all the events
+	for ( my $i = 0; $i <= $#events; $i++ ) {
+		# Get their day of the year
+		my $when = getTime( $events[$i]->{when} );
+		my $day = $when->doy();
+
+		# If the event day is old we need to remove it
+		if ( time() > $events[$i]->{when} && $day != $cur ) {
+			print STDERR "Cleaning up $events[$i]->{name}\n";
+
+			# Remove the event (but don't remove the calendar entry)
+			splice( @events, $i, 1 );
+			$i--;
+
+			$remove++;
+		}
+	}
+	
+	return $remove;
 }
 
 sub addPlace {

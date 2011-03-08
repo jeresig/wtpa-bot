@@ -9,9 +9,12 @@ use warnings;
 
 package main;
 
+use WTPA;
 use Config::Abstract::Ini;
 
 our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
+
+utilInit( $ini );
 
 my $bot = WTPABot->new(
 	server => $ini->{irc}{server},
@@ -28,17 +31,10 @@ $bot->run();
 package WTPABot;
 use base 'Bot::BasicBot';
 
-# Main Code
-our @events = ();
-our %places = ();
-our $lastPull = time();
-
-require "utils.pl";
+use WTPA;
 
 # Load places, connect to Google Calendar and PingFM
 sub init {
-	utilInit();
-	
 	calConnect();
 	pingConnect();
 }
@@ -179,38 +175,7 @@ sub re {
 # check for old events to remove
 sub tick {
 	my $self = shift;
-	my $remove = 0;
-	my $mtime = (stat( $ini->{config}{backup} ))[9];
-
-	# Check to see if the data was updated via the web interface
-	if ( $lastPull && $mtime > $lastPull ) {
-		loadBackup();
-		$remove = 1;
-	}
-
-	$lastPull = $mtime;
-
-	# Get the current day of the year for comparison
-	my $now = getTime( time() );
-	my $cur = $now->doy();
-
-	# Go through all the events
-	for ( my $i = 0; $i <= $#events; $i++ ) {
-		# Get their day of the year
-		my $when = getTime( $events[$i]->{when} );
-		my $day = $when->doy();
-
-		# If the event day is old we need to remove it
-		if ( time() > $events[$i]->{when} && $day != $cur ) {
-			print STDERR "Cleaning up $events[$i]->{name}\n";
-
-			# Remove the event (but don't remove the calendar entry)
-			splice( @events, $i, 1 );
-			$i--;
-
-			$remove++;
-		}
-	}
+	my $remove = trimEvent();
 
 	# Only update the topic if an item should be removed
 	if ( $remove > 0 ) {

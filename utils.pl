@@ -11,7 +11,7 @@ use Config::Abstract::Ini;
 my $cal;
 my $ping;
 
-sub init {
+sub utilInit {
 	loadBackup();
 	loadPlaces();
 }

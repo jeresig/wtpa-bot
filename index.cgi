@@ -17,7 +17,7 @@ require "utils.pl";
 
 our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
 
-init();
+utilInit();
 
 if ( $action eq 'add' ) {
 	my $err = addEvent({
@@ -109,6 +109,7 @@ foreach my $place ( sort { lc($a) cmp lc($b) } keys %places ) {
 	</form></li>~;
 }
 
+$index =~ s/TODAY/getTime(time())->strftime("%D")/ge;
 $index =~ s/UPCOMING/$toUpdate/g;
 $index =~ s/PLACES/$placeList/g;
 $index =~ s/MSG//g;
@@ -136,7 +137,7 @@ __DATA__
 		<input type="hidden" name="action" value="add"/>
 		<label for="name">Name:</label><input type="text" name="name"/><br/>
 		<label for="place">Place:</label><input type="text" name="place"/><br/>
-		<label for="date">Date:</label><input type="text" name="date" value="01/01/2011"/><br/>
+		<label for="date">Date:</label><input type="text" name="date" value="TODAY"/><br/>
 		<label for="time">Time:</label><input type="text" name="time" value="7:00"/> <select name="ampm">
 		<option>pm</option><option>am</option></select><br/>
 		<label></label><input type="submit" value="Add Event"/>

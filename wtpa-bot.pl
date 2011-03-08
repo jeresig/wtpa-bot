@@ -9,6 +9,8 @@ use warnings;
 
 package main;
 
+use Config::Abstract::Ini;
+
 our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
 
 my $bot = WTPABot->new(
@@ -27,15 +29,15 @@ package WTPABot;
 use base 'Bot::BasicBot';
 
 # Main Code
-my @events;
-my %places;
-my $lastPull = time();
+our @events = ();
+our %places = ();
+our $lastPull = time();
 
 require "utils.pl";
 
 # Load places, connect to Google Calendar and PingFM
 sub init {
-	init();
+	utilInit();
 	
 	calConnect();
 	pingConnect();
@@ -177,19 +179,20 @@ sub re {
 # check for old events to remove
 sub tick {
 	my $self = shift;
-	my $mtime = stat( FILE )[9];
-	
+	my $remove = 0;
+	my $mtime = (stat( $ini->{config}{backup} ))[9];
+
 	# Check to see if the data was updated via the web interface
-	if ( $mtime > $lastPull ) {
+	if ( $lastPull && $mtime > $lastPull ) {
 		loadBackup();
-		$lastPull = $mtime;
 		$remove = 1;
 	}
+
+	$lastPull = $mtime;
 
 	# Get the current day of the year for comparison
 	my $now = getTime( time() );
 	my $cur = $now->doy();
-	my $remove = 0;
 
 	# Go through all the events
 	for ( my $i = 0; $i <= $#events; $i++ ) {

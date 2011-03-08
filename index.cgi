@@ -75,9 +75,9 @@ foreach my $event ( @WTPA::events ) {
 	$toUpdate .= qq~<li><span class="date">$nice_date $nice_time:</span> $namePlace
 		<span class='buttons'>
 			<input type='button' value='Update' class="update"/>
-			<form action="" method="POST" class="cance">
+			<form action="" method="POST" class="cancel">
 				<input type="hidden" name="action" value="cancel"/>
-				<input type="hidden" name="old" value="' + data.name + '"/>
+				<input type="hidden" name="old" value="$name"/>
 				<input type="submit" value="Cancel"/>
 			</form>
 		</span>

@@ -392,7 +392,6 @@ sub getTopic {
 	my $cur = $now->doy();
 	my $prev = $now;
 	my $disp = "";
-	my $later = 0;
 
 	# Go through all the events
 	foreach my $event ( @events ) {
@@ -429,30 +428,11 @@ sub getTopic {
 					# Don't display the minutes when they're :00
 					$when->minute > 0 ? "%l:%M%P" : "%l%P" ) : "");
 
-		# Items further in the future are clumped together
-		} else {
-			# Display the month/day at the end of the list
-			if ( $later && $day != $disp ) {
-				$topic .= " " . $prev->strftime("%b %e");
-			}
-
-			# Handle the separation of items in the topic
-			$topic .= ($topic eq "" ? "" : !$later ? " | Later: " : 
-				$day != $disp ? ", " : " & ");
-
-			# Only display the name of the event and date (no location or time)
-			$topic .= $event->{name};
-
-			$later = 1;
+		# Items further in the future are removed
 		}
 
 		$disp = $day;
 		$prev = $when;
-	}
-
-	# Display the month/day at the end of the list
-	if ( $later ) {
-		$topic .= " " . $prev->strftime("%b %e");
 	}
 
 	$topic =~ s/ +/ /g;

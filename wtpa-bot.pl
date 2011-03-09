@@ -80,8 +80,7 @@ sub said {
 		}
 
     } else {
-			return $self->help();
-		}
+		return $self->help();
 	}
 
 	# Return undefined to not display a response

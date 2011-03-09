@@ -36,7 +36,6 @@ package WTPABot;
 use base 'Bot::BasicBot';
 
 use WTPA;
-use LWP::Simple;
 
 our $curTopic = "";
 

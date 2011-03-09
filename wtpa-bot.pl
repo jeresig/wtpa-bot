@@ -70,18 +70,11 @@ sub said {
 
 	# Check to see if the message was addressed to us
 	if ( defined $msg->{address} && ($msg->{address} eq $self->nick() || $msg->{address} eq "msg") ) {
-		my $re = "";
-
-		print STDERR "WHO: $msg->{who} MSG: $msg->{body}\n";
-
 		# Dump a status report for today
 		if ( $msg->{body} eq "" || $msg->{body} eq "wtpa" ) {
-			$self->re( 0, $msg, getToday() );
+			return getToday();
 		}
-
-    } else {
-		return $self->help();
-	}
+    }
 
 	# Return undefined to not display a response
 	return;

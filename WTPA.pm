@@ -9,6 +9,7 @@ use warnings;
 use JSON;
 use DateTime;
 use Net::PingFM;
+use LWP::Simple;
 use Time::ParseDate;
 use WWW::Shorten::Bitly;
 use Net::Google::Calendar;
@@ -72,10 +73,18 @@ sub pingConnect {
 
 # Load the old data from the backup file
 sub loadBackup {
-	open( JSON, $ini->{config}{backup} );
-	my $json = <JSON>;
+	my $json;
+	
+	if ( defined $ini->{config}{remoteBackup} ) {
+		$json = get( $ini->{config}{remoteBackup} );
+	
+	} else {
+		open( JSON, $ini->{config}{backup} );
+		$json = <JSON>;
+		close( JSON );
+	}
+	
 	@events = @{$json ne "" ? decode_json( $json ) : []};
-	close( JSON );
 }
 
 sub saveBackup {
@@ -218,9 +227,7 @@ sub updateEvent {
 		my $event = $events[$i];
 
 		# And look for one whose name matches
-		if ( $event->{name} =~ /$name/i ) {
-			print STDERR "Updating $event->{name}\n";
-			
+		if ( $event->{name} =~ /$name/i ) {			
 			calConnect();
 
 			# Be sure to update the associated Google Calendar event
@@ -265,8 +272,6 @@ sub cancelEvent {
 	for ( my $i = 0; $i <= $#events; $i++ ) {
 		# And look for one whose name matches
 		if ( $events[$i]->{name} =~ /$name/i ) {
-			print STDERR "Cancelling $events[$i]->{name}\n";
-			
 			calConnect();
 
 			# Be sure to remove the associated Google Calendar event
@@ -317,8 +322,6 @@ sub trimEvent {
 
 		# If the event day is old we need to remove it
 		if ( time() > $events[$i]->{when} && $day != $cur ) {
-			print STDERR "Cleaning up $events[$i]->{name}\n";
-
 			# Remove the event (but don't remove the calendar entry)
 			splice( @events, $i, 1 );
 			$i--;
@@ -326,6 +329,9 @@ sub trimEvent {
 			$remove++;
 		}
 	}
+	
+	# Save the modified events
+	saveBackup();
 	
 	return $remove;
 }

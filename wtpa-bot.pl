@@ -1,5 +1,6 @@
 #!/usr/bin/perl
-# An IRC bot for managing events
+# An IRC bot for updating the topic of a channel
+# to show upcoming events.
 # Written by John Resig
 #   http://ejohn.org/
 
@@ -14,7 +15,10 @@ use Config::Abstract::Ini;
 
 our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
 
-utilInit( $ini );
+# We're pulling from a remote URL instead of a local file
+$ini->{config}{remoteBackup} = "http://ejohn.org/files/wtpa/events.json";
+
+$WTPA::ini = $ini;
 
 my $bot = WTPABot->new(
 	server => $ini->{irc}{server},
@@ -32,30 +36,19 @@ package WTPABot;
 use base 'Bot::BasicBot';
 
 use WTPA;
+use LWP::Simple;
 
-# Load places, connect to Google Calendar and PingFM
-sub init {
-	1;
-}
+our $curTopic = "";
 
 # Watch for changes to the topic
 sub topic {
-	my $self = shift;
-	my $msg = shift;
+	my ( $self, $msg ) = @_;
+	
+	# Remember what the new topic is, so we don't set it again
+	$curTopic = $msg->{topic};
 
-	# If no user was specified (e.g. it was done before we entered the channel)
-	if ( !(defined $msg->{who}) || $msg->{who} eq "" ) {
-		# Override the topic with ours
-		$self->update_topic( $msg->{topic} );
-
-	# If we didn't change the topic
-	} elsif ( $msg->{who} ne $self->nick() ) {
-		# Override the topic with ours
-		$self->update_topic( $msg->{topic} );
-
-		# And chastise the user who changed it
-		$self->re( 1, $msg, "Please use me to update the topic!" );
-	}
+	# Override the topic with ours
+	$self->update_topic();
 }
 
 # A useful help message
@@ -65,8 +58,7 @@ sub help {
 
 # Watch for when messages are said
 sub said {
-	my $self = shift;
-	my $msg = shift;
+	my ( $self, $msg ) = @_;
 
 	# Check to see if the message was addressed to us
 	if ( defined $msg->{address} && ($msg->{address} eq $self->nick() || $msg->{address} eq "msg") ) {
@@ -80,48 +72,28 @@ sub said {
 	return;
 }
 
-# Simple routine for displaying error messages
-sub re {
-	my $self = shift;
-	my $error = shift;
-	my $orig = shift;
-	my $msg = shift;
-
-	if ( $error ) {
-		print STDERR "ERROR: $msg\n";
-		$msg = "ERROR: $msg";
-	}
-
-	$self->say( 
-		who => $orig->{who},
-		channel => $orig->{channel},
-		body => ($orig->{channel} eq "msg" ? "" : "$orig->{who}: ") . $msg
-	);
-}
-
-# Simple method called every 5 seconds
-# check for old events to remove
+# Simple method called every 30 seconds to update the topic with the new value
 sub tick {
 	my $self = shift;
-	my $remove = trimEvent();
 
-	# Only update the topic if an item should be removed
-	if ( $remove > 0 ) {
-		$self->update_topic();
-	}
+	$self->update_topic();
 
-	# Call the tick method again in 5 seconds
-	return 5;
+	# Call the tick method again in 30 seconds
+	return 30;
 }
 
 # Utility method for updating the topic
 sub update_topic {
-	my $self = shift;
-	my $cur_topic = shift;
+	my ( $self ) = @_;
+	
+	# Pull in the event data from the server
+	loadBackup();
+	
+	# Figure out what the new topic should be
 	my $topic = getTopic();
 
 	# The topic is identical to what's there, don't update
-	if ( defined $cur_topic && $topic eq $cur_topic ) {
+	if ( $topic eq $curTopic ) {
 		return;
 	}
 
@@ -130,5 +102,9 @@ sub update_topic {
 	# Update the topic in the channel
 	$self->{IRCOBJ}->yield(
 		sl_prioritized => 30,
-		"TOPIC #" . $ini->{irc}{channel} . " :$topic" );
+		"TOPIC #" . $ini->{irc}{channel} . " :$topic"
+	);
+	
+	# Remember what the new topic is, so we don't set it again
+	$curTopic = $topic;
 }

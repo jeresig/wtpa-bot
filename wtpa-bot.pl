@@ -35,8 +35,6 @@ use WTPA;
 
 # Load places, connect to Google Calendar and PingFM
 sub init {
-	calConnect();
-	pingConnect();
 	1;
 }
 
@@ -62,7 +60,7 @@ sub topic {
 
 # A useful help message
 sub help {
-	return "How to use me: http://github.com/jeresig/wtpa-bot";
+	return "Use: http://ejohn.org/wtpa/";
 }
 
 # Watch for when messages are said
@@ -79,70 +77,7 @@ sub said {
 		# Dump a status report for today
 		if ( $msg->{body} eq "" || $msg->{body} eq "wtpa" ) {
 			$self->re( 0, $msg, getToday() );
-
-		# Get the current topic
-		} elsif ( $msg->{body} eq "topic" ) {
-			return getTopic();
-
-		# Is the user attempting to do add a place
-		} elsif ( $msg->{body} =~ /^place add ([^ ]+) (.+)/i ) {
-			addPlace( $1, $2 );
-
-			$self->re( 0, $msg, "Place list updated." );
-
-		# Is the user attempting to update a place
-		} elsif ( $msg->{body} =~ /^place update (.*?): ([^ ]+) (.+)/i ) {
-			updatePlace( $1, $2, $3 );
-
-			$self->re( 0, $msg, "Place list updated." );
-
-		# Dump a list of places
-		} elsif ( $msg->{body} eq "places" && defined $ini->{places}{url} ) {
-			$self->re( 0, $msg, $ini->{places}{url} );
-
-		# Is the user attempting to cancel an event
-		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
-			my $err = cancelEvent( $1 );
-			
-			if ( $err ) {
-				$self->re( 1, $msg, $err );
-			
-			} else {
-				$self->update_topic();
-			}
-
-		# Update an event with new details
-		} elsif ( $msg->{body} =~ /^update (.*?): ((.+) @ (?:(.+?), )?(.+))$/i ) {
-			my $err = updateEvent( $1, $2, {
-				name => $3,
-				place => $5 ? $4 : "",
-				when => $5 || $4
-			});
-			
-			if ( $err ) {
-				$self->re( 1, $msg, $err );
-			
-			} else {
-				$self->update_topic();
-			}
-
-		# Otherwise check to see if we're adding an event
-		} elsif ( $msg->{body} =~ /^(.+) @ (?:(.+?), )?(.+)$/ ) {
-			print STDERR "Adding new entry.\n";
-			
-			my $err = addEvent({
-				name => $1,
-				place => $3 ? $2 : "",
-				when => $3 ? $3 : $2
-			});
-			
-			if ( $err ) {
-				$self->re( 1, $msg, $err );
-			
-			} else {
-				# Update the topic
-				$self->update_topic();
-			}
+		}
 
     } else {
 			return $self->help();

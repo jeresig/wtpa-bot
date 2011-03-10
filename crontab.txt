@@ -1,1 +1,1 @@
-0 0 0 * * * /var/www/ejohn.org/wtpa/update.pl
+0 0 * * * cd /var/www/ejohn.org/wtpa && ./update.pl

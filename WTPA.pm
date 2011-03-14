@@ -10,10 +10,10 @@ use JSON;
 use DateTime;
 use Net::PingFM;
 use LWP::Simple;
-use Time::ParseDate;
 use WWW::Shorten::Bitly;
 use Net::Google::Calendar;
 use Config::Abstract::Ini;
+use DateTime::Format::Natural;
 use base 'Exporter';
 
 our @EXPORT = qw( utilInit calConnect pingConnect events places
@@ -144,7 +144,7 @@ sub addEvent {
 	my $data = shift;
 	my $start;
 	my $all;
-	
+
 	$data->{when} = parseDate( $data->{when} );
 
 	# We need to build the dates for the calendar
@@ -206,7 +206,7 @@ sub updateEvent {
 	
 	my $start;
 	my $all;
-	
+
 	$data->{when} = parseDate( $data->{when} );
 
 	# We need to build the dates for the calendar
@@ -512,12 +512,13 @@ sub getTime {
 sub parseDate {
 	my ( $date ) = @_;
 
-	my $time = parsedate( $date,
-		ZONE => $ini->{config}{timezone_short},
-		PREFER_FUTURE => 1
+	my $parser = DateTime::Format::Natural->new(
+		time_zone => $ini->{config}{timezone},
+		format => 'mm/dd/yy',
+		prefer_future => 1
 	);
 
-	return $time;
+	return $parser->parse_datetime( $date )->epoch();
 }
 
 1;

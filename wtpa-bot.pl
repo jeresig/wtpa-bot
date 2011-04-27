@@ -1,6 +1,5 @@
 #!/usr/bin/perl
-# An IRC bot for updating the topic of a channel
-# to show upcoming events.
+# An IRC bot for managing events
 # Written by John Resig
 #   http://ejohn.org/
 
@@ -18,7 +17,7 @@ our $ini = (new Config::Abstract::Ini( 'config.ini' ))->get_all_settings;
 # We're pulling from a remote URL instead of a local file
 $ini->{config}{remoteBackup} = "http://ejohn.org/files/wtpa/events.json";
 
-$WTPA::ini = $ini;
+utilInit( $ini );
 
 my $bot = WTPABot->new(
 	server => $ini->{irc}{server},
@@ -39,10 +38,16 @@ use WTPA;
 
 our $curTopic = "";
 
+# Load places, connect to Google Calendar and PingFM
+sub init {
+	calConnect();
+	pingConnect();
+}
+
 # Watch for changes to the topic
 sub topic {
 	my ( $self, $msg ) = @_;
-	
+
 	# Remember what the new topic is, so we don't set it again
 	$curTopic = $msg->{topic};
 
@@ -52,7 +57,7 @@ sub topic {
 
 # A useful help message
 sub help {
-	return "Use: http://ejohn.org/wtpa/";
+	return "How to use me: http://github.com/jeresig/wtpa-bot Also: http://ejohn.org/wtpa/";
 }
 
 # Watch for when messages are said
@@ -61,11 +66,60 @@ sub said {
 
 	# Check to see if the message was addressed to us
 	if ( defined $msg->{address} && ($msg->{address} eq $self->nick() || $msg->{address} eq "msg") ) {
+		my $re = "";
+
+		print STDERR "WHO: $msg->{who} MSG: $msg->{body}\n";
+
 		# Dump a status report for today
 		if ( $msg->{body} eq "" || $msg->{body} eq "wtpa" ) {
 			return getToday();
+
+		# Is the user attempting to cancel an event
+		} elsif ( $msg->{body} =~ /^cancel (.*)/i ) {
+			my $err = cancelEvent( $1 );
+			
+			if ( $err ) {
+				return $err;
+			
+			} else {
+				$self->update_topic();
+			}
+
+		# Update an event with new details
+		} elsif ( $msg->{body} =~ /^update (.*?): ((.+) @ (?:(.+?), )?(.+))$/i ) {
+			my $err = updateEvent( $1, $2, {
+				name => $3,
+				place => $5 ? $4 : "",
+				when => $5 || $4
+			});
+			
+			if ( $err ) {
+				return $err;
+			
+			} else {
+				$self->update_topic();
+			}
+
+		# Otherwise check to see if we're adding an event
+		} elsif ( $msg->{body} =~ /^(.+) @ (?:(.+?), )?(.+)$/ ) {
+			my $err = addEvent({
+				name => $1,
+				place => $3 ? $2 : "",
+				when => $3 ? $3 : $2
+			});
+			
+			if ( $err ) {
+				return $err;
+			
+			} else {
+				# Update the topic
+				$self->update_topic();
+			}
+
+    } else {
+			return $self->help();
 		}
-    }
+	}
 
 	# Return undefined to not display a response
 	return;
@@ -77,22 +131,22 @@ sub tick {
 
 	$self->update_topic();
 
-	# Call the tick method again in 30 seconds
+	# Call the tick method again in 5 seconds
 	return 30;
 }
 
 # Utility method for updating the topic
 sub update_topic {
 	my ( $self ) = @_;
-	
+
 	# Pull in the event data from the server
 	loadBackup();
-	
+
 	# Figure out what the new topic should be
 	my $topic = getTopic();
 
 	# The topic is identical to what's there, don't update
-	if ( $topic eq $curTopic ) {
+	if ( defined $curTopic && index( $topic, $curTopic ) == 0 ) {
 		return;
 	}
 
@@ -103,7 +157,7 @@ sub update_topic {
 		sl_prioritized => 30,
 		"TOPIC #" . $ini->{irc}{channel} . " :$topic"
 	);
-	
+
 	# Remember what the new topic is, so we don't set it again
 	$curTopic = $topic;
 }

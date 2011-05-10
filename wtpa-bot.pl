@@ -141,6 +141,7 @@ sub update_topic {
 
 	# Pull in the event data from the server
 	loadBackup();
+	loadPlaces();
 
 	# Figure out what the new topic should be
 	my $topic = getTopic();

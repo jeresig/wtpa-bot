@@ -1,9 +1,0 @@
-<Files ~ "\.ini$">
-	Order allow,deny
-	Deny from all
-</Files>
-
-AuthType Basic
-AuthName "Where is the Party at?"
-AuthUserFile /var/www/ejohn.org/wtpa/.htpasswd
-Require valid-user

@@ -64,6 +64,10 @@ sub help {
 sub said {
 	my ( $self, $msg ) = @_;
 
+	if ( $msg->{who} =~ /wtpa/i || $msg->{who} =~ /bot/i ) {
+		return;
+	}
+
 	# Check to see if the message was addressed to us
 	if ( defined $msg->{address} && ($msg->{address} eq $self->nick() || $msg->{address} eq "msg") ) {
 		my $re = "";
@@ -117,7 +121,7 @@ sub said {
 			}
 
     } else {
-			return $self->help();
+			#return $self->help();
 		}
 	}
 
